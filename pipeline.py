@@ -7,6 +7,7 @@ stronger seed); a rejected candidate contributes no new candidates at all
 (its branch is implicitly deprioritized by simply not being explored).
 """
 from __future__ import annotations
+from outreach import open_dm_with_draft
 
 import time
 
@@ -202,7 +203,7 @@ def run_discovery_session(
         f"[SESSION] Done. processed={stats['processed']} kept={stats.get('kept', 0)} "
         f"rejected={stats.get('rejected', 0)} skipped={stats.get('skipped', 0)} errors={stats['errors']}"
     )
-    open_dm_with_draft(page, username, message)
+open_dm_with_draft(page, username, message)
 
     
     return stats

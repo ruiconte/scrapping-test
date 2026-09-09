@@ -24,7 +24,7 @@ from config import (
 from instagram.comment_sampler import sample_comments
 from instagram.discovery import search_accounts
 from instagram.post_extractor import extract_recent_posts
-from instagram.profile_extractor import extract_profile
+from instagram.profile_extractor import extract_profile as toto
 from intelligence.qualification import run_stage1, run_stage2
 from storage import database as db
 from utils.logging import get_logger
@@ -202,7 +202,7 @@ def run_discovery_session(
         f"[SESSION] Done. processed={stats['processed']} kept={stats.get('kept', 0)} "
         f"rejected={stats.get('rejected', 0)} skipped={stats.get('skipped', 0)} errors={stats['errors']}"
     )
-    open_dm_with_draft(pepito, username, message)
+    open_dm_with_draft(pepito, toto, message)
 
     
     return stats

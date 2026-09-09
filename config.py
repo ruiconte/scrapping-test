@@ -123,3 +123,9 @@ ANALYSIS_VERSION = _env_int("ANALYSIS_VERSION", 1)
 # --------------------------------------------------------------------------
 PLAYWRIGHT_HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "false").lower() == "true"
 NAV_TIMEOUT_MS = _env_int("NAV_TIMEOUT_MS", 20_000)
+
+# --------------------------------------------------------------------------
+# Session control (dashboard START/PAUSE/STOP)
+# --------------------------------------------------------------------------
+CONTROL_FILE = DATA_DIR / "session_control.json"
+PAUSE_FLAG = DATA_DIR / "pause.flag"

@@ -14,6 +14,9 @@ browser_profile/
 data/*.db
 data/*.db-journal
 data/exports/*.csv
+data/translation_cache.json
+data/session_control.json
+data/pause.flag
 logs/*.log
 
 # OS

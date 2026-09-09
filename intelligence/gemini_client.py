@@ -54,3 +54,21 @@ def generate_structured(system_instruction: str, user_payload: str, response_sch
         raise ValueError(f"Gemini did not return valid structured output: {response.text[:300]}")
     log.info("[GEMINI] analysis completed")
     return parsed
+
+
+@retry(times=3, delay_seconds=3.0, exceptions=(Exception,))
+def generate_text(system_instruction: str, user_payload: str) -> str:
+    """Plain-text Gemini call (no structured schema) — used for translation."""
+    client = _get_client()
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=user_payload,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            temperature=0.0,
+        ),
+    )
+    text = (response.text or "").strip()
+    if not text:
+        raise ValueError("Gemini returned an empty text response.")
+    return text

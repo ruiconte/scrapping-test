@@ -5,10 +5,12 @@ Kept intentionally simple (no ORM) since the schema is small and stable.
 """
 from __future__ import annotations
 
+import csv
 import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from config import DB_PATH
@@ -234,6 +236,9 @@ def list_prospects(filters: Optional[dict] = None, order_by: str = "final_score 
     if filters.get("prospect_type"):
         clauses.append("prospect_types LIKE ?")
         params.append(f'%"{filters["prospect_type"]}"%')
+    if filters.get("category"):
+        clauses.append("(primary_category = ? OR account_category = ?)")
+        params.extend([filters["category"], filters["category"]])
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     sql = f"SELECT * FROM prospects {where} ORDER BY {order_by}"
@@ -351,6 +356,14 @@ def mark_queue_status(username: str, status: str) -> None:
         )
 
 
+def recover_stale_processing() -> int:
+    """Reset any queue items stuck in PROCESSING (e.g. from a crash or an
+    unclean shutdown) back to PENDING so they're retried on the next run."""
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE discovery_queue SET status = 'PENDING' WHERE status = 'PROCESSING'")
+        return cur.rowcount
+
+
 def queue_size(status: str = "PENDING") -> int:
     with get_connection() as conn:
         row = conn.execute(
@@ -362,6 +375,43 @@ def queue_size(status: str = "PENDING") -> int:
 # --------------------------------------------------------------------------
 # Stats (for dashboard)
 # --------------------------------------------------------------------------
+
+def start_session_stats() -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO session_stats (session_start) VALUES (?)", (_now(),)
+        )
+        return cur.lastrowid
+
+
+def finish_session_stats(session_id: int, stats: dict, gemini_calls: int = 0) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE session_stats
+            SET session_end = ?, profiles_discovered = ?, profiles_analyzed_stage1 = ?,
+                profiles_analyzed_stage2 = ?, gemini_calls = ?, errors = ?
+            WHERE id = ?
+            """,
+            (
+                _now(),
+                stats.get("processed", 0),
+                stats.get("processed", 0),
+                stats.get("stage2_processed", 0),
+                gemini_calls,
+                stats.get("errors", 0),
+                session_id,
+            ),
+        )
+
+
+def recent_sessions(limit: int = 10) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM session_stats ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
 
 def get_summary_stats() -> dict:
     with get_connection() as conn:
@@ -384,6 +434,71 @@ def get_summary_stats() -> dict:
             ),
             "queue_pending": queue_size("PENDING"),
         }
+
+
+_ALLOWED_DISTRIBUTION_FIELDS = {
+    "primary_category", "language", "country", "discovery_source", "account_category",
+}
+
+
+def distribution(field: str, limit: int = 10) -> list[tuple[str, int]]:
+    if field not in _ALLOWED_DISTRIBUTION_FIELDS:
+        raise ValueError(f"Unsupported distribution field: {field}")
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT {field} as val, COUNT(*) as c FROM prospects
+            WHERE {field} IS NOT NULL AND {field} != ''
+            GROUP BY {field} ORDER BY c DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [(r["val"], r["c"]) for r in rows]
+
+
+def score_distribution() -> list[tuple[str, int]]:
+    """Buckets final_score into 0-20, 20-40, ... 80-100 ranges."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT final_score FROM prospects WHERE final_score IS NOT NULL"
+        ).fetchall()
+    buckets = {f"{i}-{i+20}": 0 for i in range(0, 100, 20)}
+    for r in rows:
+        score = r["final_score"]
+        bucket_idx = min(score // 20, 4) * 20
+        buckets[f"{bucket_idx}-{bucket_idx+20}"] += 1
+    return list(buckets.items())
+
+
+_CSV_COLUMNS = [
+    "Score", "Username", "Display Name", "Followers", "Category", "Language",
+    "Country", "Prospect Type", "Reason", "Instagram URL", "Discovery Source",
+    "Date Discovered", "Status",
+]
+
+
+def export_csv(path: Path, filters: Optional[dict] = None) -> int:
+    rows = list_prospects(filters)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(_CSV_COLUMNS)
+        for r in rows:
+            writer.writerow([
+                r.get("final_score") if r.get("final_score") is not None else r.get("preliminary_score"),
+                r.get("username"),
+                r.get("display_name"),
+                r.get("followers"),
+                r.get("primary_category") or r.get("account_category"),
+                r.get("language"),
+                r.get("country"),
+                ", ".join(r.get("prospect_types") or []),
+                r.get("analysis_reason"),
+                r.get("profile_url"),
+                r.get("discovery_source"),
+                r.get("date_discovered"),
+                r.get("status"),
+            ])
+    return len(rows)
 
 
 def top_discovery_keywords(limit: int = 10) -> list[tuple[str, int]]:

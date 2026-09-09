@@ -40,12 +40,26 @@ STOP_WORDS = {
     "contact", "s'abonner", "message instagram",
 }
 _URL_LINE_RE = re.compile(r"^(https?://\S+|www\.\S+|[a-z0-9-]+\.[a-z]{2,}(/\S*)?)$", re.IGNORECASE)
-_CATEGORY_HINTS_RE = re.compile(
-    r"(digital creator|créateur|créatrice|personal blog|blog personnel|public figure|"
-    r"author|auteur|business|entreprise|store|boutique|artist|artiste|educat|"
-    r"writer|écrivain|entrepreneur)",
-    re.IGNORECASE,
-)
+
+# Instagram's account-category badge is always one of a small set of exact
+# phrases (unlike bio/link text, which can loosely contain similar words —
+# e.g. a linked "Amazon Storefront" chip previously false-matched a loose
+# "store" substring check). Matching the full line against this whitelist
+# avoids mislabeling bio or link text as a category.
+_KNOWN_CATEGORIES = {
+    "digital creator", "créateur de contenu numérique", "personal blog",
+    "blog personnel", "public figure", "personnage public", "author",
+    "auteur", "autrice", "blogger", "blogueur", "blogueuse", "artist",
+    "artiste", "educator", "éducateur", "éducatrice", "small business",
+    "petite entreprise", "product/service", "produit/service",
+    "education website", "site web éducatif", "writer", "écrivain",
+    "écrivaine", "entrepreneur", "community", "communauté",
+    "photographer", "photographe", "video creator", "créateur vidéo",
+}
+
+
+def _is_known_category(line: str) -> bool:
+    return line.strip().lower() in _KNOWN_CATEGORIES
 
 # A stat line looks like "175 posts", "2,436 followers", "931 following",
 # or the French equivalents "175 publications", "2 436 abonné(e)s", "931 abonnements".
@@ -109,8 +123,8 @@ def _parse_header_lines(lines: list[str], username: str) -> dict:
         if _URL_LINE_RE.match(line.strip()):
             external_url = line if line.startswith("http") else f"https://{line}"
             break
-        if _CATEGORY_HINTS_RE.search(line) and len(line) < 40:
-            category = line
+        if _is_known_category(line):
+            category = line.strip()
             continue
         if display_name is None and line.lower() != username.lower():
             display_name = line

@@ -192,6 +192,36 @@ def cmd_discover(args):
     run_discovery_session(max_profiles=args.max_profiles, seed_keywords=keywords)
 
 
+def cmd_draft_outreach(args):
+    from browser.browser import InstagramSession, SecurityStopError
+    from instagram.outreach import get_message_for_profile, open_dm_with_draft
+    from storage import database as db
+
+    db.init_db()
+    profile = db.get_prospect(args.username)
+    if not profile:
+        log.info(f"[ERROR] @{args.username} not found in database. Run 'qualify' first.")
+        return
+
+    log.info(f"[OUTREACH] @{args.username} → detected language: {profile.get('language') or 'UNKNOWN'}")
+    message = get_message_for_profile(profile, args.message)
+
+    session = InstagramSession()
+    session.start()
+    try:
+        if not session.ensure_logged_in():
+            log.info("[ERROR] Not logged in, aborting.")
+            return
+        ok = open_dm_with_draft(session.page, args.username, message)
+        if ok:
+            db.save_outreach_message(args.username, message)
+            print(f"\nDraft ready in the DM composer for @{args.username}. Review it in the browser and press send yourself.")
+    except SecurityStopError as exc:
+        log.info(f"[ERROR] {exc}")
+    finally:
+        session.stop()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fableya-prospector")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -223,6 +253,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_discover.add_argument("--keywords", type=str, default=None, help="Comma-separated seed keywords.")
     p_discover.add_argument("--max-profiles", type=int, default=5)
 
+    p_draft = sub.add_parser("draft-outreach", help="Open a prospect's DM composer with a pre-filled message (you send it).")
+    p_draft.add_argument("username")
+    p_draft.add_argument("--message", required=True, help="Template, e.g. 'Hi {display_name}, ...'")
+
     return parser
 
 
@@ -245,6 +279,8 @@ def main():
         cmd_qualify(args)
     elif args.command == "discover":
         cmd_discover(args)
+    elif args.command == "draft-outreach":
+        cmd_draft_outreach(args)
 
 
 if __name__ == "__main__":

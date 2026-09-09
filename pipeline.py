@@ -8,16 +8,24 @@ stronger seed); a rejected candidate contributes no new candidates at all
 """
 from __future__ import annotations
 
+import time
+
 from browser.browser import InstagramSession, SecurityStopError
 from config import (
+    ANALYSIS_VERSION,
     FOLLOWERS_ACCEPTABLE_MAX,
     FOLLOWERS_ACCEPTABLE_MIN,
+    MAX_COMMENTS_PER_POST,
+    MAX_POSTS_STAGE2,
     MAX_PROFILES_PER_SESSION,
     MAX_RELATED_PER_PROFILE,
+    PAUSE_FLAG,
 )
+from instagram.comment_sampler import sample_comments
 from instagram.discovery import search_accounts
+from instagram.post_extractor import extract_recent_posts
 from instagram.profile_extractor import extract_profile
-from intelligence.qualification import run_stage1
+from intelligence.qualification import run_stage1, run_stage2
 from storage import database as db
 from utils.logging import get_logger
 from utils.normalization import extract_hashtags
@@ -50,6 +58,34 @@ def _followers_in_acceptable_range(followers) -> bool:
     return FOLLOWERS_ACCEPTABLE_MIN <= followers <= FOLLOWERS_ACCEPTABLE_MAX
 
 
+def run_stage2_for_prospect(page, username: str, profile: dict) -> None:
+    prospect = db.get_prospect(username)
+    if not prospect:
+        return
+
+    posts = extract_recent_posts(page, username, max_posts=MAX_POSTS_STAGE2)
+    if not posts:
+        log.info(f"[DEEP] @{username} → no posts available, skipping deep analysis")
+        return
+
+    # Comments sampled from only a couple of posts — aggregate audience
+    # signal, not a full scrape (data minimization).
+    for p in posts[:2]:
+        p["sample_comments"] = sample_comments(page, p["post_url"], max_comments=MAX_COMMENTS_PER_POST)
+
+    post_ids = db.save_posts(prospect["id"], posts)
+    for post_id, p in zip(post_ids, posts):
+        if p.get("sample_comments"):
+            db.save_comments(post_id, p["sample_comments"])
+
+    result, data_hash = run_stage2(profile, posts)
+    db.save_stage2_result(username, result.model_dump(mode="json"), data_hash, ANALYSIS_VERSION)
+    if result.recommended_action.value == "REJECT":
+        log.info(f"[SKIP] @{username} → rejected after deep analysis")
+    else:
+        log.info(f"[KEEP] @{username} → {result.recommended_action.value}")
+
+
 def process_one_candidate(page, item: dict) -> str:
     """Returns the outcome: 'SKIPPED' | 'REJECTED' | 'KEPT'."""
     username = item["username"]
@@ -78,6 +114,12 @@ def process_one_candidate(page, item: dict) -> str:
         return "REJECTED"
 
     log.info(f"[KEEP] @{username} → {result.decision.value}")
+
+    if result.decision.value == "DEEP_ANALYZE":
+        try:
+            run_stage2_for_prospect(page, username, profile)
+        except Exception as exc:
+            log.info(f"[ERROR] Stage-2 deep analysis failed for @{username}: {exc}")
 
     if result.decision.value == "DEEP_ANALYZE" and _followers_in_acceptable_range(profile.get("followers")):
         # Graph growth: a strongly relevant profile's OWN hashtags become new
@@ -109,6 +151,11 @@ def run_discovery_session(
     seed_keywords: list[str] | None = None,
 ) -> dict:
     db.init_db()
+    recovered = db.recover_stale_processing()
+    if recovered:
+        log.info(f"[SESSION] Recovered {recovered} candidate(s) stuck from a previous unclean shutdown.")
+
+    session_id = db.start_session_stats()
     session = InstagramSession()
     session.start()
     stats = {"processed": 0, "kept": 0, "rejected": 0, "skipped": 0, "errors": 0}
@@ -121,7 +168,16 @@ def run_discovery_session(
             added = seed_queue_from_keywords(session.page, seed_keywords)
             log.info(f"[SESSION] Seeded {added} new candidate(s) from {len(seed_keywords)} keyword(s).")
 
+        paused_logged = False
         while stats["processed"] < max_profiles:
+            if PAUSE_FLAG.exists():
+                if not paused_logged:
+                    log.info("[SESSION] Paused. Waiting to resume...")
+                    paused_logged = True
+                time.sleep(2)
+                continue
+            paused_logged = False
+
             item = db.pop_next_from_queue()
             if not item:
                 log.info("[SESSION] Discovery queue is empty.")
@@ -140,6 +196,7 @@ def run_discovery_session(
         log.info(f"[SESSION] STOPPED — security block detected: {exc}")
     finally:
         session.stop()
+        db.finish_session_stats(session_id, stats)
 
     log.info(
         f"[SESSION] Done. processed={stats['processed']} kept={stats.get('kept', 0)} "

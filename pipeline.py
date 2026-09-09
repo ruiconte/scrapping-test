@@ -206,7 +206,7 @@ def run_discovery_session(
     pepito = page.url
     toto = pepito.rstrip("/").split("/")[-1]
     return toto
-    open_dm_with_draft( Page, toto, get_message_for_profile())
+    open_dm_with_draft( Page, toto, get_message_for_profile(profile))
 
     
     return stats

@@ -112,6 +112,8 @@ def open_dm_with_draft(page: Page, username: str, message: str) -> bool:
 
     composer.click()
     composer.type(message, delay=15)
-    page.keyboard.press("Enter")
+    # Do NOT press Enter here: in Instagram's DM composer, Enter submits the
+    # message immediately. The message must stay in the composer, untouched,
+    # for a human to review and send themselves.
     log.info(f"[OUTREACH] @{username} → message drafted in composer, awaiting your review to send")
     return True

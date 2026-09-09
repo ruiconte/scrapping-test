@@ -194,7 +194,7 @@ def cmd_discover(args):
 
 def cmd_draft_outreach(args):
     from browser.browser import InstagramSession, SecurityStopError
-    from instagram.outreach import get_message_for_profile, open_dm_with_draft
+    from instagram.outreach import get_message_for_profile, open_dm_with_draft, send_current_draft
     from storage import database as db
 
     db.init_db()
@@ -213,9 +213,20 @@ def cmd_draft_outreach(args):
             log.info("[ERROR] Not logged in, aborting.")
             return
         ok = open_dm_with_draft(session.page, args.username, message)
-        if ok:
-            db.save_outreach_message(args.username, message)
-            print(f"\nDraft ready in the DM composer for @{args.username}. Review it in the browser and press send yourself.")
+        if not ok:
+            return
+        db.save_outreach_message(args.username, message)
+        print(f"\n--- MESSAGE READY FOR @{args.username} ---\n{message}\n")
+        if args.send:
+            reply = input("Type 'send' to actually send this message now, anything else to leave it as a draft: ").strip().lower()
+            if reply == "send":
+                send_current_draft(session.page, args.username)
+                db.mark_outreach_sent(args.username)
+                print(f"Sent to @{args.username}.")
+            else:
+                print("Left as a draft in the composer. Nothing was sent.")
+        else:
+            print("Draft ready in the DM composer. Review it in the browser and press send yourself\n(or re-run with --send to be prompted to confirm sending from here).")
     except SecurityStopError as exc:
         log.info(f"[ERROR] {exc}")
     finally:
@@ -256,6 +267,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_draft = sub.add_parser("draft-outreach", help="Open a prospect's DM composer with a pre-filled message (you send it).")
     p_draft.add_argument("username")
     p_draft.add_argument("--message", required=True, help="Template, e.g. 'Hi {display_name}, ...'")
+    p_draft.add_argument("--send", action="store_true",
+                          help="After drafting, show the message and prompt you to type 'send' to confirm sending it now.")
 
     return parser
 

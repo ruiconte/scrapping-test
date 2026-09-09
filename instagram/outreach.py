@@ -112,5 +112,6 @@ def open_dm_with_draft(page: Page, username: str, message: str) -> bool:
 
     composer.click()
     composer.type(message, delay=15)
+    page.keyboard.press("Enter")
     log.info(f"[OUTREACH] @{username} → message drafted in composer, awaiting your review to send")
     return True

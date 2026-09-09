@@ -1,0 +1,20 @@
+# Secrets
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Playwright persistent browser profile (session cookies, auth state)
+browser_profile/
+
+# Data & logs
+data/*.db
+data/*.db-journal
+data/exports/*.csv
+logs/*.log
+
+# OS
+.DS_Store

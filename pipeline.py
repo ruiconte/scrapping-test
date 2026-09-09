@@ -8,7 +8,7 @@ stronger seed); a rejected candidate contributes no new candidates at all
 """
 from __future__ import annotations
 from instagram.outreach import open_dm_with_draft
-from playwright.sync_api import Page as pepito
+from playwright.sync_api import Page
 
 from browser.browser import InstagramSession, SecurityStopError
 from config import (
@@ -24,12 +24,12 @@ from config import (
 from instagram.comment_sampler import sample_comments
 from instagram.discovery import search_accounts
 from instagram.post_extractor import extract_recent_posts
-from instagram.profile_extractor import extract_profile as toto
+from instagram.profile_extractor import extract_profile
 from intelligence.qualification import run_stage1, run_stage2
 from storage import database as db
 from utils.logging import get_logger
 from utils.normalization import extract_hashtags
-from instagram.outreach import get_message_for_profile as louis
+from instagram.outreach import get_message_for_profile
 
 log = get_logger()
 
@@ -203,7 +203,7 @@ def run_discovery_session(
         f"[SESSION] Done. processed={stats['processed']} kept={stats.get('kept', 0)} "
         f"rejected={stats.get('rejected', 0)} skipped={stats.get('skipped', 0)} errors={stats['errors']}"
     )
-    open_dm_with_draft(pepito, toto, louis)
+    open_dm_with_draft( Page, extract_profile(, louis)
 
     
     return stats

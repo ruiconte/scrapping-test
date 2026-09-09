@@ -7,8 +7,8 @@ stronger seed); a rejected candidate contributes no new candidates at all
 (its branch is implicitly deprioritized by simply not being explored).
 """
 from __future__ import annotations
-from instagram.outreach import open_dm_with_draft
-from playwright.sync_api import Page
+
+import time
 
 from browser.browser import InstagramSession, SecurityStopError
 from config import (
@@ -29,7 +29,6 @@ from intelligence.qualification import run_stage1, run_stage2
 from storage import database as db
 from utils.logging import get_logger
 from utils.normalization import extract_hashtags
-from instagram.outreach import get_message_for_profile
 
 log = get_logger()
 
@@ -203,10 +202,4 @@ def run_discovery_session(
         f"[SESSION] Done. processed={stats['processed']} kept={stats.get('kept', 0)} "
         f"rejected={stats.get('rejected', 0)} skipped={stats.get('skipped', 0)} errors={stats['errors']}"
     )
-    pepito = page.url
-    toto = pepito.rstrip("/").split("/")[-1]
-    return toto
-    open_dm_with_draft( Page, toto, get_message_for_profile(profile))
-
-    
     return stats

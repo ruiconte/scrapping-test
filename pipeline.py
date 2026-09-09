@@ -203,7 +203,10 @@ def run_discovery_session(
         f"[SESSION] Done. processed={stats['processed']} kept={stats.get('kept', 0)} "
         f"rejected={stats.get('rejected', 0)} skipped={stats.get('skipped', 0)} errors={stats['errors']}"
     )
-    open_dm_with_draft( Page, extract_profile(, louis)
+    pepito = page.url
+    toto = url.rstrip("/").split("/")[-1]
+    return username
+    open_dm_with_draft( Page, toto, louis)
 
     
     return stats

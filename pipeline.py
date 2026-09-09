@@ -204,9 +204,9 @@ def run_discovery_session(
         f"rejected={stats.get('rejected', 0)} skipped={stats.get('skipped', 0)} errors={stats['errors']}"
     )
     pepito = page.url
-    toto = url.rstrip("/").split("/")[-1]
-    return username
-    open_dm_with_draft( Page, toto, louis)
+    toto = pepito.rstrip("/").split("/")[-1]
+    return toto
+    open_dm_with_draft( Page, toto, get_message_for_profile())
 
     
     return stats

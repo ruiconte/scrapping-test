@@ -9,8 +9,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Playwright persistent browser profile (session cookies, auth state)
+# Playwright persistent browser profiles (session cookies, auth state)
 browser_profile/
+browser_profile_outreach/
 
 # Data & logs
 data/*.db
@@ -20,6 +21,11 @@ data/translation_cache.json
 data/session_control.json
 data/pause.flag
 data/prospect_export_state.json
+data/outreach_queue.json
+data/outreach_queue.json.tmp
+data/outreach_worker_command.json
+data/outreach_worker_status.json
+data/outreach_worker_status.json.tmp
 prospects/*.csv
 prospects/drive_upload_state.json
 prospects/*.json.tmp

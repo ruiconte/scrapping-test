@@ -4,7 +4,6 @@ Run with: streamlit run dashboard/app.py
 """
 from __future__ import annotations
 
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -16,8 +15,10 @@ import pandas as pd
 import streamlit as st
 
 import config
+import outreach_control
 import session_control
 from storage import database as db
+from storage import outreach_queue
 
 st.set_page_config(page_title="Fableya Prospector", layout="wide")
 db.init_db()
@@ -257,54 +258,91 @@ if st.button("⬇ EXPORT CSV"):
 st.divider()
 
 # --------------------------------------------------------------------------
-# Ready to contact: draft-only, one click per prospect opens the real DM
-# composer pre-filled — you review and press send yourself. Nothing here
-# ever sends automatically.
+# Outreach queue: one prospect at a time, human-controlled.
+#
+# A persistent worker process (outreach_worker.py) holds ONE Instagram
+# browser session open. "Préparer le prochain DM" is the ONLY action that
+# touches the browser automatically, and it only ever fills the composer
+# (instagram.outreach.open_dm_with_draft) — never presses Enter, never
+# clicks Send. "Passer" and "Marquer comme traité" only edit the local
+# queue file; they never talk to the browser.
 # --------------------------------------------------------------------------
-st.subheader("Ready to Contact")
+st.subheader("File d'attente d'outreach")
 st.caption(
-    "Drafts a message into the real Instagram DM composer, automatically translated into the "
-    "prospect's detected language (falls back to English if unknown). You review and send it "
-    "yourself — nothing is sent automatically."
+    "Le worker prépare un message dans la messagerie Instagram réelle — "
+    "tu relis et envoies toi-même. Aucun envoi automatique."
 )
 
-DEFAULT_TEMPLATE_EN = (
-    "Hi {display_name}! I hope you don’t mind me reaching out. I recently created a small "
-    "project called Fableya, which allows parents to create personalized illustrated stories "
-    "for their children.\n\nI’m currently trying to get the project out there and would "
-    "really love to hear what you think about the concept. If you’re curious, you can "
-    "check it out at fableya.com \U0001F60A\n\nThanks for taking the time to read my message!"
-)
+worker_status = outreach_control.get_status()
+worker_state = worker_status.get("state", "not_started")
+worker_badge = {
+    "not_started": "⚪ Worker arrêté", "stopped": "⚪ Worker arrêté",
+    "starting": "🟡 Worker en démarrage...", "idle": "🟢 Worker prêt",
+    "prepared": "🟢 Worker prêt", "empty": "🟢 Worker prêt (queue vide)",
+    "error": "🔴 Erreur worker", "security_stop": "🔴 Bloqué (sécurité Instagram)",
+    "unknown": "⚪ État inconnu",
+}.get(worker_state, worker_state)
+st.markdown(f"**Statut du worker :** {worker_badge}")
+if worker_status.get("error"):
+    st.warning(worker_status["error"])
 
-message_template = st.text_area(
-    "Message template in English (use {display_name} or {username})",
-    value=st.session_state.get("outreach_template", DEFAULT_TEMPLATE_EN),
-    key="outreach_template",
-    height=180,
-)
+wc1, wc2 = st.columns(2)
+if wc1.button("▶ Démarrer le worker outreach", disabled=(worker_state not in ("not_started", "stopped", "unknown", "error", "security_stop"))):
+    try:
+        outreach_control.start_worker()
+        st.success("Worker démarré — le navigateur Instagram va s'ouvrir.")
+        time.sleep(1)
+        st.rerun()
+    except RuntimeError as exc:
+        st.error(str(exc))
+if wc2.button("⏹ Arrêter le worker", disabled=(worker_state in ("not_started", "stopped", "unknown"))):
+    outreach_control.stop_worker()
+    st.rerun()
 
-ready_rows = [r for r in db.list_prospects()
-              if r["status"] in ("HIGH_PRIORITY", "MEDIUM_PRIORITY", "DEEP_ANALYSIS_PENDING", "PREQUALIFIED")
-              and r.get("outreach_status") != "SENT"]
+counts = outreach_queue.get_counts()
+qc1, qc2, qc3, qc4 = st.columns(4)
+qc1.metric("Pending", counts.get("pending", 0))
+qc2.metric("Prepared", counts.get("prepared", 0))
+qc3.metric("Done", counts.get("done", 0))
+qc4.metric("Failed", counts.get("failed", 0))
 
-if not ready_rows:
-    st.caption("No qualified prospects awaiting outreach yet.")
+current = outreach_queue.get_prepared()
+if current:
+    st.markdown("### Prospect en cours (préparé — à toi de vérifier et d'envoyer)")
+    st.markdown(f"**@{current['username']}** — {current.get('display_name') or ''}")
+    st.markdown(f"Score : {current.get('score', '—')}")
+    st.markdown(f"Raison : {current.get('reason') or '—'}")
+    st.text_area("Message envoyé dans le composer", value=current.get("message") or "", height=120, disabled=True)
+    st.markdown(f"[Ouvrir le profil]({current.get('profile_url')})")
+
+    pc1, pc2 = st.columns(2)
+    if pc1.button("↩ Passer (remettre en attente)"):
+        outreach_queue.requeue_to_end(current["username"])
+        st.rerun()
+    if pc2.button("✅ Marquer comme traité", type="primary"):
+        outreach_queue.update_status(current["username"], "done")
+        st.rerun()
 else:
-    for r in ready_rows[:20]:
-        rc1, rc2, rc3, rc4, rc5 = st.columns([2, 1, 1, 1, 2])
-        rc1.markdown(f"**@{r['username']}**  \n{r.get('display_name') or ''}")
-        rc2.markdown(f"Score: {r.get('final_score') or r.get('preliminary_score') or '—'}")
-        rc3.markdown(f"Lang: {r.get('language') or 'UNKNOWN'}")
-        rc4.markdown(f"Draft: {r.get('outreach_status', 'NOT_DRAFTED')}")
-        if rc5.button("✉️ Open & pre-fill DM", key=f"draft_{r['username']}"):
-            log_path = config.BASE_DIR / "logs" / "prospector.log"
-            with open(log_path, "a") as log_file:
-                subprocess.Popen(
-                    [sys.executable, str(config.BASE_DIR / "main.py"), "draft-outreach",
-                     r["username"], "--message", message_template],
-                    cwd=str(config.BASE_DIR), stdout=log_file, stderr=subprocess.STDOUT,
-                )
-            st.info(f"Opening Instagram and drafting a message for @{r['username']}... check the Chrome window.")
+    next_item = outreach_queue.get_next_pending()
+    if next_item:
+        st.markdown("### Prochain prospect en attente")
+        st.markdown(f"**@{next_item['username']}** — {next_item.get('display_name') or ''}")
+        st.markdown(f"Score : {next_item.get('score', '—')}")
+        st.markdown(f"Raison : {next_item.get('reason') or '—'}")
+        if next_item.get("message"):
+            st.text_area("Aperçu du message", value=next_item["message"], height=120, disabled=True)
+        else:
+            st.warning("Message manquant — ce profil sera marqué 'failed' sans être préparé.")
+
+        if st.button("📩 Préparer le prochain DM", type="primary", disabled=(worker_state not in ("idle", "empty"))):
+            outreach_control.request_prepare_next()
+            st.info(f"Préparation du DM pour @{next_item['username']}... vérifie la fenêtre Instagram dans quelques secondes.")
+            time.sleep(2)
+            st.rerun()
+        if worker_state not in ("idle", "empty"):
+            st.caption("Démarre d'abord le worker outreach ci-dessus.")
+    else:
+        st.caption("Aucun prospect en attente dans la file d'outreach.")
 
 if auto_refresh:
     time.sleep(5)

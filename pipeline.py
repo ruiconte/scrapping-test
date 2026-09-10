@@ -20,15 +20,18 @@ from config import (
     MAX_PROFILES_PER_SESSION,
     MAX_RELATED_PER_PROFILE,
     MIN_SCORE,
+    OUTREACH_MESSAGE_TEMPLATE,
     PAUSE_FLAG,
 )
 from instagram.comment_sampler import sample_comments
 from instagram.discovery import search_accounts
+from instagram.outreach import get_message_for_profile
 from instagram.post_extractor import extract_recent_posts
 from instagram.profile_extractor import extract_profile
 from intelligence.qualification import run_stage1, run_stage2
 from intelligence.schemas import RecommendedAction, Stage1Decision
 from storage import database as db
+from storage import outreach_queue
 from storage import prospect_exporter
 from utils.logging import get_logger
 from utils.normalization import extract_hashtags
@@ -59,6 +62,29 @@ def _followers_in_acceptable_range(followers) -> bool:
     if followers is None:
         return True  # never reject purely for missing data
     return FOLLOWERS_ACCEPTABLE_MIN <= followers <= FOLLOWERS_ACCEPTABLE_MAX
+
+
+def _finalize_qualified_prospect(username: str) -> None:
+    """Called once a prospect's qualification outcome is a genuine keep
+    (not rejected). Generates its personalized outreach message (if not
+    already drafted), keeps the existing CSV export as a local backup/
+    history, and adds it to the local outreach queue — the only place the
+    manual "prepare DM" workflow reads from.
+    """
+    profile = db.get_prospect(username)
+    if not profile:
+        return
+
+    if not profile.get("outreach_message"):
+        try:
+            message = get_message_for_profile(profile, OUTREACH_MESSAGE_TEMPLATE)
+            db.save_outreach_message(username, message)
+            profile = db.get_prospect(username)
+        except Exception as exc:
+            log.info(f"[ERROR] Message generation failed for @{username}: {exc}")
+
+    prospect_exporter.add_prospect(profile)
+    outreach_queue.add_to_queue(profile)
 
 
 def run_stage2_for_prospect(page, username: str, profile: dict) -> None:
@@ -95,7 +121,7 @@ def run_stage2_for_prospect(page, username: str, profile: dict) -> None:
         log.info(f"[SKIP] @{username} → rejected after deep analysis")
     else:
         log.info(f"[KEEP] @{username} → {result.recommended_action.value}")
-        prospect_exporter.add_prospect(db.get_prospect(username))
+        _finalize_qualified_prospect(username)
 
 
 def process_one_candidate(page, item: dict) -> str:
@@ -137,7 +163,7 @@ def process_one_candidate(page, item: dict) -> str:
 
     if result.decision.value == "KEEP_LIGHT":
         # No Stage 2 follows for KEEP_LIGHT, so this is its final outcome.
-        prospect_exporter.add_prospect(db.get_prospect(username))
+        _finalize_qualified_prospect(username)
 
     if result.decision.value == "DEEP_ANALYZE":
         try:
@@ -178,12 +204,6 @@ def run_discovery_session(
     recovered = db.recover_stale_processing()
     if recovered:
         log.info(f"[SESSION] Recovered {recovered} candidate(s) stuck from a previous unclean shutdown.")
-
-    try:
-        from storage import google_drive
-        google_drive.retry_pending_uploads()
-    except Exception as exc:
-        log.info(f"[ERROR] [DRIVE] Startup retry check failed: {exc}")
 
     session_id = db.start_session_stats()
     session = InstagramSession()

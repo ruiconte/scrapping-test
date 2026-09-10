@@ -275,6 +275,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("drive-auth", help="One-time Google Drive OAuth authorization (opens a browser).")
 
+    sub.add_parser("outreach-worker", help="Run the persistent outreach worker in the foreground (prepare-only, never sends).")
+
     p_draft = sub.add_parser("draft-outreach", help="Open a prospect's DM composer with a pre-filled message (you send it).")
     p_draft.add_argument("username")
     p_draft.add_argument("--message", required=True, help="Template, e.g. 'Hi {display_name}, ...'")
@@ -305,6 +307,9 @@ def main():
         cmd_discover(args)
     elif args.command == "drive-auth":
         cmd_drive_auth(args)
+    elif args.command == "outreach-worker":
+        import outreach_worker
+        outreach_worker.run()
     elif args.command == "draft-outreach":
         cmd_draft_outreach(args)
 

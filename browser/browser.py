@@ -7,6 +7,9 @@ for the human to log in manually.
 """
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Optional
+
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 
 from browser import selectors
@@ -27,16 +30,24 @@ class SecurityStopError(Exception):
 
 
 class InstagramSession:
-    def __init__(self):
+    def __init__(self, profile_dir: Optional[Path] = None):
+        """`profile_dir` lets a caller use a SEPARATE persistent Chrome
+        profile (its own login/cookies) instead of the default shared one
+        — needed so the outreach worker can hold a browser open at the
+        same time as a discovery session, since Chrome refuses to open
+        the same profile directory twice concurrently. Requires its own
+        one-time manual login the first time it's used.
+        """
         self._pw = None
         self.context: BrowserContext | None = None
         self.page: Page | None = None
+        self._profile_dir = profile_dir or BROWSER_PROFILE_DIR
 
     def start(self) -> Page:
         self._pw = sync_playwright().start()
-        BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        self._profile_dir.mkdir(parents=True, exist_ok=True)
         self.context = self._pw.chromium.launch_persistent_context(
-            user_data_dir=str(BROWSER_PROFILE_DIR),
+            user_data_dir=str(self._profile_dir),
             channel="chrome",
             headless=PLAYWRIGHT_HEADLESS,
             viewport={"width": 1280, "height": 900},

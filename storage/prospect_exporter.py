@@ -1,5 +1,8 @@
 """Batched CSV export of qualified prospects, BATCH_SIZE at a time.
 
+This is a local backup/history export only — the outreach workflow reads
+from storage.outreach_queue instead, not from these CSV files.
+
 The filesystem is the source of truth for both the next batch number and
 the set of already-exported usernames: on every call we (re)derive them by
 reading whatever prospects_NNN.csv files already exist in
@@ -140,14 +143,6 @@ def _flush_batch() -> None:
     except ValueError:
         rel = final_path
     log.info(f"[PROSPECT] Batch complete — exported {rel} ({flushed_count} profiles)")
-
-    try:
-        from storage import google_drive
-        google_drive.upload_file(final_path)
-    except Exception as exc:
-        # Drive is a nice-to-have mirror of a batch that is already safely
-        # on disk — an upload problem must never affect the local export.
-        log.info(f"[ERROR] [DRIVE] Unexpected error during upload trigger: {exc}")
 
 
 def add_prospect(prospect: dict) -> None:

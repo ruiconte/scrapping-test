@@ -192,6 +192,15 @@ def cmd_discover(args):
     run_discovery_session(max_profiles=args.max_profiles, seed_keywords=keywords)
 
 
+def cmd_drive_auth(_args):
+    from storage import google_drive
+
+    if google_drive.authenticate():
+        log.info("[DRIVE] Ready — token.json saved, future runs will reuse it automatically.")
+    else:
+        log.info("[ERROR] Google Drive authentication did not complete. See the error above.")
+
+
 def cmd_draft_outreach(args):
     from browser.browser import InstagramSession, SecurityStopError
     from instagram.outreach import get_message_for_profile, open_dm_with_draft, send_current_draft
@@ -264,6 +273,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_discover.add_argument("--keywords", type=str, default=None, help="Comma-separated seed keywords.")
     p_discover.add_argument("--max-profiles", type=int, default=5)
 
+    sub.add_parser("drive-auth", help="One-time Google Drive OAuth authorization (opens a browser).")
+
     p_draft = sub.add_parser("draft-outreach", help="Open a prospect's DM composer with a pre-filled message (you send it).")
     p_draft.add_argument("username")
     p_draft.add_argument("--message", required=True, help="Template, e.g. 'Hi {display_name}, ...'")
@@ -292,6 +303,8 @@ def main():
         cmd_qualify(args)
     elif args.command == "discover":
         cmd_discover(args)
+    elif args.command == "drive-auth":
+        cmd_drive_auth(args)
     elif args.command == "draft-outreach":
         cmd_draft_outreach(args)
 

@@ -1,6 +1,7 @@
 # Secrets
 .env
 credentials.json
+token.json
 
 # Python
 venv/
@@ -20,6 +21,8 @@ data/session_control.json
 data/pause.flag
 data/prospect_export_state.json
 prospects/*.csv
+prospects/drive_upload_state.json
+prospects/*.json.tmp
 logs/*.log
 
 # OS

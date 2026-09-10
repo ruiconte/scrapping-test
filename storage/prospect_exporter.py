@@ -141,6 +141,14 @@ def _flush_batch() -> None:
         rel = final_path
     log.info(f"[PROSPECT] Batch complete — exported {rel} ({flushed_count} profiles)")
 
+    try:
+        from storage import google_drive
+        google_drive.upload_file(final_path)
+    except Exception as exc:
+        # Drive is a nice-to-have mirror of a batch that is already safely
+        # on disk — an upload problem must never affect the local export.
+        log.info(f"[ERROR] [DRIVE] Unexpected error during upload trigger: {exc}")
+
 
 def add_prospect(prospect: dict) -> None:
     """Adds a qualified (non-rejected) prospect to the pending export

@@ -161,6 +161,12 @@ def run_discovery_session(
     if recovered:
         log.info(f"[SESSION] Recovered {recovered} candidate(s) stuck from a previous unclean shutdown.")
 
+    try:
+        from storage import google_drive
+        google_drive.retry_pending_uploads()
+    except Exception as exc:
+        log.info(f"[ERROR] [DRIVE] Startup retry check failed: {exc}")
+
     session_id = db.start_session_stats()
     session = InstagramSession()
     session.start()

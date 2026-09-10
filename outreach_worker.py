@@ -153,7 +153,7 @@ def run() -> None:
         # is already strong (empty composer AND the text found in the
         # conversation history), verified not to false-positive even over
         # a full minute of waiting with no real send.
-        GRACE_PERIOD_SECONDS = 5
+        GRACE_PERIOD_SECONDS = 2
         watching_username = None
         watch_started_at = 0.0
 
@@ -201,7 +201,7 @@ def run() -> None:
                     log.info(f"[OUTREACH-WORKER] @{prepared['username']} → envoi détecté, marqué 'done'.")
                     watching_username = None
                 else:
-                    time.sleep(2)
+                    time.sleep(1)
                     continue
             else:
                 watching_username = None

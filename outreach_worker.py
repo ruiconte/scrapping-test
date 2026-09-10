@@ -175,7 +175,7 @@ def run() -> None:
                     continue
 
                 try:
-                    sent = was_message_sent(session.page, prepared["message"])
+                    sent = was_message_sent(session.page, prepared["message"], username=prepared["username"])
                 except PlaywrightError as exc:
                     log.info(f"[ERROR] [OUTREACH-WORKER] Browser session appears dead ({exc}). Stopping.")
                     _write_status({
@@ -183,7 +183,8 @@ def run() -> None:
                         "error": f"Session navigateur perdue (probablement un manque de mémoire) : {exc}",
                     })
                     break
-                except Exception:
+                except Exception as exc:
+                    log.info(f"[ERROR] [OUTREACH-WORKER] Send-check failed for @{prepared['username']}: {exc}")
                     sent = False
 
                 if sent:

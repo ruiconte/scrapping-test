@@ -194,9 +194,15 @@ def run() -> None:
                             f"(total watching: {total_watched:.0f}s)"
                         )
                     elif int(total_watched) % 10 < 1:
+                        try:
+                            from instagram.outreach import _composer_and_fragment_state
+                            c_text, frag = _composer_and_fragment_state(session.page, prepared["message"])
+                        except Exception:
+                            c_text, frag = "<erreur>", "<erreur>"
                         log.info(
                             f"[OUTREACH-WORKER] Still watching @{prepared['username']} — "
-                            f"{total_watched:.0f}s elapsed, last check {check_elapsed:.2f}s, sent={sent}"
+                            f"{total_watched:.0f}s elapsed, last check {check_elapsed:.2f}s, sent={sent}, "
+                            f"composer={c_text!r}, fragment_found={frag}, url={session.page.url}"
                         )
                 except PlaywrightError as exc:
                     log.info(f"[ERROR] [OUTREACH-WORKER] Browser session appears dead ({exc}). Stopping.")

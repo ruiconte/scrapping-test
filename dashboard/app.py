@@ -275,6 +275,11 @@ st.caption(
 
 worker_status = outreach_control.get_status()
 worker_state = worker_status.get("state", "not_started")
+# The worker's *last reported action* (e.g. "prepared") is a stale,
+# one-shot signal — it must not gate the button, or it stays disabled
+# forever after the very first successful prepare. What matters here is
+# only whether the worker PROCESS is alive at all.
+worker_running = worker_state not in ("not_started", "stopped", "unknown")
 worker_badge = {
     "not_started": "⚪ Worker arrêté", "stopped": "⚪ Worker arrêté",
     "starting": "🟡 Worker en démarrage...", "idle": "🟢 Worker prêt",
@@ -334,12 +339,12 @@ else:
         else:
             st.warning("Message manquant — ce profil sera marqué 'failed' sans être préparé.")
 
-        if st.button("📩 Préparer le prochain DM", type="primary", disabled=(worker_state not in ("idle", "empty"))):
+        if st.button("📩 Préparer le prochain DM", type="primary", disabled=not worker_running):
             outreach_control.request_prepare_next()
             st.info(f"Préparation du DM pour @{next_item['username']}... vérifie la fenêtre Instagram dans quelques secondes.")
             time.sleep(2)
             st.rerun()
-        if worker_state not in ("idle", "empty"):
+        if not worker_running:
             st.caption("Démarre d'abord le worker outreach ci-dessus.")
     else:
         st.caption("Aucun prospect en attente dans la file d'outreach.")

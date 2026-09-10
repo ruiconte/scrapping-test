@@ -20,6 +20,8 @@ import os
 import signal
 import time
 
+from playwright.sync_api import Error as PlaywrightError
+
 from browser.browser import InstagramSession, SecurityStopError
 from config import DATA_DIR, OUTREACH_BROWSER_PROFILE_DIR
 from instagram.outreach import open_dm_with_draft
@@ -108,6 +110,32 @@ def run() -> None:
                         log.info(f"[OUTREACH-WORKER] STOPPED — security block detected: {exc}")
                         _write_status({"state": "security_stop", "pid": os.getpid(), "error": str(exc)})
                         break
+                    except PlaywrightError as exc:
+                        # The browser/context itself is dead (e.g. crashed
+                        # from low system memory) — retrying more commands
+                        # against it would just fail again forever. Mark
+                        # this item failed, stop cleanly, and let the
+                        # dashboard offer to restart the worker instead of
+                        # spinning on a dead browser.
+                        log.info(f"[ERROR] [OUTREACH-WORKER] Browser session appears dead ({exc}). Stopping.")
+                        outreach_queue.update_status(item["username"], "failed")
+                        _write_status({
+                            "state": "error", "pid": None,
+                            "error": f"Session navigateur perdue (probablement un manque de mémoire) : {exc}",
+                        })
+                        break
+                    except Exception as exc:
+                        # Any other unexpected failure must never take the
+                        # whole persistent worker down — mark this one
+                        # failed and keep waiting for the next command.
+                        log.info(f"[ERROR] [OUTREACH-WORKER] @{item['username']} → {exc}")
+                        outreach_queue.update_status(item["username"], "failed")
+                        _write_status({
+                            "state": "idle", "pid": os.getpid(),
+                            "error": f"@{item['username']}: {exc}",
+                        })
+                        time.sleep(1)
+                        continue
 
                     if ok:
                         outreach_queue.update_status(item["username"], "prepared")

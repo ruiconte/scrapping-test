@@ -63,7 +63,10 @@ class InstagramSession:
 
     def stop(self) -> None:
         if self.context:
-            self.context.close()
+            try:
+                self.context.close()
+            except Exception:
+                pass  # already closed/crashed (e.g. browser died) — nothing to clean up
         if self._pw:
             self._pw.stop()
 

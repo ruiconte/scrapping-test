@@ -129,3 +129,15 @@ NAV_TIMEOUT_MS = _env_int("NAV_TIMEOUT_MS", 20_000)
 # --------------------------------------------------------------------------
 CONTROL_FILE = DATA_DIR / "session_control.json"
 PAUSE_FLAG = DATA_DIR / "pause.flag"
+
+OUTREACH_MESSAGE_TEMPLATE = """Hi {display_name},
+
+I came across your profile and thought you might be interested in Fableya.
+
+Fableya lets parents create personalized illustrated children's stories in just a few minutes.
+
+You can check it out here:
+https://fableya.com
+
+Have a great day!
+"""

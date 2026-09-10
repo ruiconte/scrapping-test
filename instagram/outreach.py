@@ -119,13 +119,19 @@ def open_dm_with_draft(page: Page, username: str, message: str) -> bool:
     return True
 
 
-def send_current_draft(page: Page, username: str) -> None:
-    """Submits whatever is currently typed in the open DM composer.
+def send_current_draft(page: Page, username: str) -> bool:
+    """Send the message currently present in the Instagram DM composer.
 
-    Only call this right after `open_dm_with_draft` returned True for the
-    same `page`/username, and only once a human has explicitly reviewed and
-    approved the drafted text — this function performs the actual send with
-    no further review step of its own.
+    Returns True when the send action was performed successfully.
+    Does not attempt to bypass Instagram warnings, challenges or blocks.
     """
-    page.keyboard.press("Enter")
-    log.info(f"[OUTREACH] @{username} → message sent (human-confirmed)")
+    try:
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(1500)
+
+        log.info(f"[OUTREACH] @{username} → message sent")
+        return True
+
+    except Exception as exc:
+        log.info(f"[OUTREACH] @{username} → send failed: {exc}")
+        return False

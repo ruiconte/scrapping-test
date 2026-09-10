@@ -1,17 +1,28 @@
 """Long-lived process holding ONE authenticated Instagram browser session
 open, so a human can prepare, review, and manually send DMs one at a time
-from the dashboard — without the browser closing between actions.
+— without the browser closing between actions.
 
 Started via `python main.py outreach-worker` (or from the dashboard).
 Stays alive, browser window open, until it receives SIGTERM (sent when
 you stop it from the dashboard) or a security block is detected.
 
+NOTE on auto-advance: an earlier version tried to auto-detect a manual
+send by polling whether the composer went back to empty. That was
+abandoned — in testing, the composer went empty on its own after a
+while with no send at all (most likely Instagram's own React composer
+resetting when the window loses OS focus while another window is
+active), which produced false "done" markings for prospects who were
+never actually contacted. That risk (silently treating a real prospect
+as handled when they weren't) was not acceptable, so this worker only
+prepares on an explicit "prepare_next" command, and a human marks a
+prospect done from the dashboard after actually sending it themselves.
+
 HARD RULE: this process performs exactly one browser action on its own —
 instagram.outreach.open_dm_with_draft() ("prepare_next" command). It must
-never import or call instagram.outreach.send_current_draft(), press
-Enter in the composer, or click a send/submit control. Marking a prospect
-"done" or "passed" happens entirely in storage/outreach_queue.py (a JSON
-file) and never touches the browser.
+never import or call instagram.outreach.send_current_draft() /
+send_initial_outreach(), press Enter in the composer, or click a send/
+submit control. Marking a prospect "done" or "passed" happens entirely in
+storage/outreach_queue.py (a JSON file) and never touches the browser.
 """
 from __future__ import annotations
 
@@ -65,6 +76,47 @@ def _clear_command() -> None:
             pass
 
 
+def _prepare(session: InstagramSession, item: dict) -> str:
+    """Attempts to prepare one item. Returns 'prepared', 'failed', or
+    'fatal' (browser/context is dead — caller should stop the worker)."""
+    if not item.get("message"):
+        log.info(f"[OUTREACH-WORKER] @{item['username']} → message manquant, marqué 'failed'.")
+        outreach_queue.update_status(item["username"], "failed")
+        _write_status({"state": "idle", "pid": os.getpid(), "error": f"@{item['username']}: message manquant"})
+        return "failed"
+
+    try:
+        ok = open_dm_with_draft(session.page, item["username"], item["message"])
+    except PlaywrightError as exc:
+        # The browser/context itself is dead (e.g. crashed from low system
+        # memory) — retrying more items against it would just fail again
+        # forever. Mark this one failed and let the caller stop cleanly.
+        log.info(f"[ERROR] [OUTREACH-WORKER] Browser session appears dead ({exc}). Stopping.")
+        outreach_queue.update_status(item["username"], "failed")
+        _write_status({
+            "state": "error", "pid": None,
+            "error": f"Session navigateur perdue (probablement un manque de mémoire) : {exc}",
+        })
+        return "fatal"
+    except Exception as exc:
+        # Any other unexpected failure must never take the whole
+        # persistent worker down — mark this one failed and keep going.
+        log.info(f"[ERROR] [OUTREACH-WORKER] @{item['username']} → {exc}")
+        outreach_queue.update_status(item["username"], "failed")
+        _write_status({"state": "idle", "pid": os.getpid(), "error": f"@{item['username']}: {exc}"})
+        return "failed"
+
+    if ok:
+        outreach_queue.update_status(item["username"], "prepared")
+        _write_status({"state": "prepared", "pid": os.getpid(), "username": item["username"]})
+        log.info(f"[OUTREACH-WORKER] @{item['username']} prêt — relis et envoie toi-même dans le navigateur.")
+        return "prepared"
+
+    outreach_queue.update_status(item["username"], "failed")
+    _write_status({"state": "idle", "pid": os.getpid(), "error": f"@{item['username']}: échec de préparation du DM"})
+    return "failed"
+
+
 def run() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
     _write_status({"state": "starting", "pid": os.getpid()})
@@ -82,6 +134,15 @@ def run() -> None:
             _write_status({"state": "error", "pid": None, "error": "not logged in"})
             return
 
+        # A "prepared" item left over from a previous run of this process
+        # (e.g. it crashed or was restarted) does NOT mean the composer is
+        # actually open in THIS fresh browser session — it isn't. Reset it
+        # to pending so it gets re-prepared for real on the next command.
+        stale = outreach_queue.get_prepared()
+        if stale:
+            log.info(f"[OUTREACH-WORKER] @{stale['username']} était 'prepared' d'une session précédente — remis en attente pour être repréparé.")
+            outreach_queue.update_status(stale["username"], "pending")
+
         _write_status({"state": "idle", "pid": os.getpid()})
         log.info("[OUTREACH-WORKER] Ready. Waiting for commands from the dashboard...")
 
@@ -90,63 +151,20 @@ def run() -> None:
 
             if action == "prepare_next":
                 _clear_command()
-                item = outreach_queue.get_next_pending()
 
+                if outreach_queue.get_prepared():
+                    # Something is already prepared and awaiting a human
+                    # decision — don't overwrite it with a new one.
+                    time.sleep(1)
+                    continue
+
+                item = outreach_queue.get_next_pending()
                 if not item:
                     _write_status({"state": "empty", "pid": os.getpid()})
-
-                elif not item.get("message"):
-                    log.info(f"[OUTREACH-WORKER] @{item['username']} → message manquant, marqué 'failed'.")
-                    outreach_queue.update_status(item["username"], "failed")
-                    _write_status({
-                        "state": "idle", "pid": os.getpid(),
-                        "error": f"@{item['username']}: message manquant",
-                    })
-
                 else:
-                    try:
-                        ok = open_dm_with_draft(session.page, item["username"], item["message"])
-                    except SecurityStopError as exc:
-                        log.info(f"[OUTREACH-WORKER] STOPPED — security block detected: {exc}")
-                        _write_status({"state": "security_stop", "pid": os.getpid(), "error": str(exc)})
+                    outcome = _prepare(session, item)
+                    if outcome == "fatal":
                         break
-                    except PlaywrightError as exc:
-                        # The browser/context itself is dead (e.g. crashed
-                        # from low system memory) — retrying more commands
-                        # against it would just fail again forever. Mark
-                        # this item failed, stop cleanly, and let the
-                        # dashboard offer to restart the worker instead of
-                        # spinning on a dead browser.
-                        log.info(f"[ERROR] [OUTREACH-WORKER] Browser session appears dead ({exc}). Stopping.")
-                        outreach_queue.update_status(item["username"], "failed")
-                        _write_status({
-                            "state": "error", "pid": None,
-                            "error": f"Session navigateur perdue (probablement un manque de mémoire) : {exc}",
-                        })
-                        break
-                    except Exception as exc:
-                        # Any other unexpected failure must never take the
-                        # whole persistent worker down — mark this one
-                        # failed and keep waiting for the next command.
-                        log.info(f"[ERROR] [OUTREACH-WORKER] @{item['username']} → {exc}")
-                        outreach_queue.update_status(item["username"], "failed")
-                        _write_status({
-                            "state": "idle", "pid": os.getpid(),
-                            "error": f"@{item['username']}: {exc}",
-                        })
-                        time.sleep(1)
-                        continue
-
-                    if ok:
-                        outreach_queue.update_status(item["username"], "prepared")
-                        _write_status({"state": "prepared", "pid": os.getpid(), "username": item["username"]})
-                        log.info(f"[OUTREACH-WORKER] @{item['username']} prêt — relis et envoie toi-même dans le navigateur.")
-                    else:
-                        outreach_queue.update_status(item["username"], "failed")
-                        _write_status({
-                            "state": "idle", "pid": os.getpid(),
-                            "error": f"@{item['username']}: échec de préparation du DM",
-                        })
 
             time.sleep(1)
 

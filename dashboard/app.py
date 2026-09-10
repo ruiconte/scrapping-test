@@ -266,11 +266,19 @@ st.divider()
 # (instagram.outreach.open_dm_with_draft) — never presses Enter, never
 # clicks Send. "Passer" and "Marquer comme traité" only edit the local
 # queue file; they never talk to the browser.
+#
+# (An earlier version tried to auto-detect a manual send by polling
+# whether the composer went empty. Dropped: in testing it went empty on
+# its own with no send at all — likely Instagram's own composer resetting
+# when the window loses OS focus — which produced false "done" markings
+# for prospects never actually contacted. Not an acceptable risk, so
+# marking a prospect done always requires an explicit click here.)
 # --------------------------------------------------------------------------
 st.subheader("File d'attente d'outreach")
 st.caption(
     "Le worker prépare un message dans la messagerie Instagram réelle — "
-    "tu relis et envoies toi-même. Aucun envoi automatique."
+    "tu relis et envoies toi-même, puis cliques \"Marquer comme traité\". "
+    "Aucun envoi ni passage au suivant automatique."
 )
 
 worker_status = outreach_control.get_status()

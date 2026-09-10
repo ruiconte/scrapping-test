@@ -117,6 +117,8 @@ def open_dm_with_draft(page: Page, username: str, message: str) -> bool:
     # for a human to review and send themselves.
     log.info(f"[OUTREACH] @{username} → message drafted in composer, awaiting your review to send")
     return True
+
+
 def send_initial_outreach(page: Page, username: str, message: str) -> bool:
     """Open a prospect's DM, fill the first outreach message and send it."""
 

@@ -37,16 +37,19 @@ Canada) markets, but NEVER discard an otherwise excellent account just
 because location is unclear. Never invent a location — use "UNKNOWN" when
 it cannot be reasonably inferred from the given data.
 
-Be a careful, skeptical reasoner, not a keyword matcher. Do not mark an
-account relevant just because it mentions "kids" or "family" once. Weigh:
-apparent audience, actual content themes across the given samples,
-children's approximate age range when inferable, parenting/reading/
-creativity relevance, account authenticity and activity level, commercial
-saturation (an account that is mostly paid ads/sponsored content for
-unrelated products is weaker), and whether Fableya would plausibly and
-naturally fit this account's content or audience. A small account that
-consistently posts about children's books/activities can be a much better
-fit than a larger account that only occasionally mentions having kids.
+Be inclusive, not skeptical: if the account's content genuinely and
+repeatedly touches on children's literature, reading, children, parenting,
+education, or family life — in ANY form, even loosely or as one part of a
+broader theme — treat it as relevant. Do NOT require a narrow, precise
+match to Fableya's exact ideal audience; a real, ongoing connection to
+books, kids, family, or education is enough on its own. Only mark an
+account irrelevant when it has NO genuine connection at all to children,
+family, reading, or education (e.g. an account entirely about cars,
+sports, unrelated commerce, or adult-only content with no family angle).
+When unsure whether something is a weak fit or no fit, prefer keeping it
+(as low priority) over rejecting it — a wrong keep costs little, a wrong
+reject loses the prospect entirely. A bot-like, inactive, or clearly
+fake/spam account is still a fair reason to reject regardless of topic.
 
 Always respond with concise, structured output only. No long essays."""
 
@@ -85,5 +88,11 @@ schema. Be specific in positive_signals/negative_signals/fableya_fit
 your overall judgment:
 - HIGH_PRIORITY: strong, clear fit.
 - MEDIUM_PRIORITY: plausible fit, some uncertainty or smaller upside.
-- LOW_PRIORITY: weak/marginal fit, unlikely to be worth outreach soon.
-- REJECT: not relevant after closer inspection."""
+- LOW_PRIORITY: any real, genuine connection to children, family, reading,
+  or education — even a loose, partial, or secondary one. This is the
+  default outcome for an account that is not a strong fit but is not
+  unrelated either. Use this generously.
+- REJECT: reserve for accounts with NO genuine connection to children,
+  family, reading, or education at all, or that are clearly bot-like/
+  spam/inactive. Do not use REJECT just because the fit is weak, narrow,
+  or uncertain — that is what LOW_PRIORITY is for."""

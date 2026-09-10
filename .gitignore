@@ -1,5 +1,6 @@
 # Secrets
 .env
+credentials.json
 
 # Python
 venv/

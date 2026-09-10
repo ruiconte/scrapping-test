@@ -27,6 +27,7 @@ from instagram.post_extractor import extract_recent_posts
 from instagram.profile_extractor import extract_profile
 from intelligence.qualification import run_stage1, run_stage2
 from storage import database as db
+from storage import prospect_exporter
 from utils.logging import get_logger
 from utils.normalization import extract_hashtags
 
@@ -84,6 +85,7 @@ def run_stage2_for_prospect(page, username: str, profile: dict) -> None:
         log.info(f"[SKIP] @{username} → rejected after deep analysis")
     else:
         log.info(f"[KEEP] @{username} → {result.recommended_action.value}")
+        prospect_exporter.add_prospect(db.get_prospect(username))
 
 
 def process_one_candidate(page, item: dict) -> str:
@@ -114,6 +116,10 @@ def process_one_candidate(page, item: dict) -> str:
         return "REJECTED"
 
     log.info(f"[KEEP] @{username} → {result.decision.value}")
+
+    if result.decision.value == "KEEP_LIGHT":
+        # No Stage 2 follows for KEEP_LIGHT, so this is its final outcome.
+        prospect_exporter.add_prospect(db.get_prospect(username))
 
     if result.decision.value == "DEEP_ANALYZE":
         try:

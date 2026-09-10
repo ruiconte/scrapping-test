@@ -17,6 +17,8 @@ data/exports/*.csv
 data/translation_cache.json
 data/session_control.json
 data/pause.flag
+data/prospect_export_state.json
+prospects/*.csv
 logs/*.log
 
 # OS

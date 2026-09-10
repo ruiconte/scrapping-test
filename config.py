@@ -34,8 +34,11 @@ EXPORTS_DIR = DATA_DIR / "exports"
 LOGS_DIR = BASE_DIR / "logs"
 DB_PATH = DATA_DIR / "prospects.db"
 BROWSER_PROFILE_DIR = BASE_DIR / "browser_profile"
+PROSPECTS_EXPORT_DIR = BASE_DIR / "prospects"
+PROSPECTS_EXPORT_STATE_FILE = DATA_DIR / "prospect_export_state.json"
+PROSPECTS_EXPORT_BATCH_SIZE = _env_int("PROSPECTS_EXPORT_BATCH_SIZE", 50)
 
-for _d in (DATA_DIR, EXPORTS_DIR, LOGS_DIR, BROWSER_PROFILE_DIR):
+for _d in (DATA_DIR, EXPORTS_DIR, LOGS_DIR, BROWSER_PROFILE_DIR, PROSPECTS_EXPORT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 # --------------------------------------------------------------------------

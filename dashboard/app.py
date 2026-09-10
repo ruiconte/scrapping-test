@@ -261,24 +261,22 @@ st.divider()
 # Outreach queue: one prospect at a time, human-controlled.
 #
 # A persistent worker process (outreach_worker.py) holds ONE Instagram
-# browser session open. "Préparer le prochain DM" is the ONLY action that
-# touches the browser automatically, and it only ever fills the composer
-# (instagram.outreach.open_dm_with_draft) — never presses Enter, never
-# clicks Send. "Passer" and "Marquer comme traité" only edit the local
-# queue file; they never talk to the browser.
-#
-# (An earlier version tried to auto-detect a manual send by polling
-# whether the composer went empty. Dropped: in testing it went empty on
-# its own with no send at all — likely Instagram's own composer resetting
-# when the window loses OS focus — which produced false "done" markings
-# for prospects never actually contacted. Not an acceptable risk, so
-# marking a prospect done always requires an explicit click here.)
+# browser session open and auto-advances: once you send a message
+# yourself in Instagram, it notices (composer empty AND the message text
+# now present in the conversation history — verified not to false-positive
+# even after 60+ seconds with no real send) and prepares the next one. The
+# ONLY browser actions it ever performs on its own are filling the
+# composer (instagram.outreach.open_dm_with_draft) and this read-only
+# check (instagram.outreach.was_message_sent) — never pressing Enter,
+# never clicking Send. "Passer" and "Marquer comme traité" only edit the
+# local queue file; they never talk to the browser.
 # --------------------------------------------------------------------------
 st.subheader("File d'attente d'outreach")
 st.caption(
-    "Le worker prépare un message dans la messagerie Instagram réelle — "
-    "tu relis et envoies toi-même, puis cliques \"Marquer comme traité\". "
-    "Aucun envoi ni passage au suivant automatique."
+    "Une fois le worker démarré, il prépare et enchaîne tout seul dès que tu envoies un "
+    "message dans Instagram (détection automatique). Aucun clic nécessaire entre deux "
+    "messages — sauf pour envoyer, qui reste toujours manuel. Active l'auto-refresh dans "
+    "la barre latérale pour voir la file avancer en direct."
 )
 
 worker_status = outreach_control.get_status()
@@ -347,7 +345,9 @@ else:
         else:
             st.warning("Message manquant — ce profil sera marqué 'failed' sans être préparé.")
 
-        if st.button("📩 Préparer le prochain DM", type="primary", disabled=not worker_running):
+        if worker_running:
+            st.caption("Le worker prépare ce profil automatiquement — patiente quelques secondes, ou clique pour forcer.")
+        if st.button("📩 Préparer maintenant", disabled=not worker_running):
             outreach_control.request_prepare_next()
             st.info(f"Préparation du DM pour @{next_item['username']}... vérifie la fenêtre Instagram dans quelques secondes.")
             time.sleep(2)

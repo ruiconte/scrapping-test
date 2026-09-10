@@ -119,6 +119,51 @@ def open_dm_with_draft(page: Page, username: str, message: str) -> bool:
     return True
 
 
+def _distinctive_fragment(message: str) -> str:
+    """Picks the longest single line of the message as a search fragment.
+
+    Avoids embedded newlines (which can render/collapse differently once a
+    message is posted vs. sitting in an editable composer) and avoids
+    short/generic lines that could false-match unrelated text.
+    """
+    lines = [l.strip() for l in message.splitlines() if l.strip()]
+    return max(lines, key=len) if lines else message.strip()
+
+
+def was_message_sent(page: Page, message: str) -> bool:
+    """Read-only check: was this exact message actually sent?
+
+    Two things must BOTH be true:
+    1. The composer is empty (Instagram clears it after a real send).
+    2. A distinctive fragment of the message text is found in the page's
+       rendered text — i.e. it has moved into the conversation history,
+       not just vanished from the composer for some unrelated reason
+       (e.g. a re-render triggered by the window losing OS focus, which a
+       composer-emptiness check alone was previously fooled by).
+
+    Never clicks or presses anything.
+    """
+    composer_text = ""
+    for sel in _COMPOSER_INPUT_SELECTORS:
+        loc = page.locator(sel).first
+        try:
+            if loc.is_visible(timeout=1000):
+                composer_text = (loc.inner_text(timeout=1000) or "").strip()
+                break
+        except Exception:
+            continue
+
+    if composer_text:
+        return False  # still sitting in the composer — not sent
+
+    fragment = _distinctive_fragment(message)
+    try:
+        body_text = page.locator("body").inner_text(timeout=2000)
+    except Exception:
+        return False
+    return fragment in body_text
+
+
 def send_initial_outreach(page: Page, username: str, message: str) -> bool:
     """Open a prospect's DM, fill the first outreach message and send it."""
 

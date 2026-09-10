@@ -1,28 +1,30 @@
 """Long-lived process holding ONE authenticated Instagram browser session
 open, so a human can prepare, review, and manually send DMs one at a time
-— without the browser closing between actions.
+— without the browser closing between actions, and without needing to
+click anything in the dashboard between messages.
 
 Started via `python main.py outreach-worker` (or from the dashboard).
 Stays alive, browser window open, until it receives SIGTERM (sent when
 you stop it from the dashboard) or a security block is detected.
 
-NOTE on auto-advance: an earlier version tried to auto-detect a manual
-send by polling whether the composer went back to empty. That was
-abandoned — in testing, the composer went empty on its own after a
-while with no send at all (most likely Instagram's own React composer
-resetting when the window loses OS focus while another window is
-active), which produced false "done" markings for prospects who were
-never actually contacted. That risk (silently treating a real prospect
-as handled when they weren't) was not acceptable, so this worker only
-prepares on an explicit "prepare_next" command, and a human marks a
-prospect done from the dashboard after actually sending it themselves.
+Auto-advance history: a first attempt polled whether the composer went
+back to empty. Abandoned — in testing the composer emptied on its own
+with no send at all (likely Instagram's own composer resetting when the
+window loses OS focus), producing false "done" markings for prospects
+never actually contacted. The current check (see
+instagram.outreach.was_message_sent) additionally requires the message
+text to actually appear in the conversation history, not just an empty
+composer — verified in testing to correctly stay negative even after 60+
+seconds with no real send, while still correctly detecting a real one.
 
-HARD RULE: this process performs exactly one browser action on its own —
-instagram.outreach.open_dm_with_draft() ("prepare_next" command). It must
-never import or call instagram.outreach.send_current_draft() /
-send_initial_outreach(), press Enter in the composer, or click a send/
-submit control. Marking a prospect "done" or "passed" happens entirely in
-storage/outreach_queue.py (a JSON file) and never touches the browser.
+HARD RULE: this process performs exactly two browser actions on its own —
+instagram.outreach.open_dm_with_draft() (fills a composer) and
+instagram.outreach.was_message_sent() (a read-only check, no click, no
+keypress). It must never import or call
+instagram.outreach.send_current_draft() / send_initial_outreach(), press
+Enter in the composer, or click a send/submit control. Marking a prospect
+"done" or "passed" happens entirely in storage/outreach_queue.py (a JSON
+file) and never touches the browser.
 """
 from __future__ import annotations
 
@@ -35,7 +37,7 @@ from playwright.sync_api import Error as PlaywrightError
 
 from browser.browser import InstagramSession, SecurityStopError
 from config import DATA_DIR, OUTREACH_BROWSER_PROFILE_DIR
-from instagram.outreach import open_dm_with_draft
+from instagram.outreach import open_dm_with_draft, was_message_sent
 from storage import outreach_queue
 from utils.logging import get_logger
 
@@ -144,27 +146,65 @@ def run() -> None:
             outreach_queue.update_status(stale["username"], "pending")
 
         _write_status({"state": "idle", "pid": os.getpid()})
-        log.info("[OUTREACH-WORKER] Ready. Waiting for commands from the dashboard...")
+        log.info("[OUTREACH-WORKER] Ready.")
+
+        # Grace period before we even start checking, purely to avoid a
+        # race right at typing time — the was_message_sent() check itself
+        # is already strong (empty composer AND the text found in the
+        # conversation history), verified not to false-positive even over
+        # a full minute of waiting with no real send.
+        GRACE_PERIOD_SECONDS = 5
+        watching_username = None
+        watch_started_at = 0.0
 
         while not _stop_requested:
-            action = _read_command()
-
-            if action == "prepare_next":
+            # An explicit command from the dashboard is just a manual
+            # nudge — clear it, the loop below already auto-advances.
+            if _read_command():
                 _clear_command()
 
-                if outreach_queue.get_prepared():
-                    # Something is already prepared and awaiting a human
-                    # decision — don't overwrite it with a new one.
+            prepared = outreach_queue.get_prepared()
+
+            if prepared:
+                if prepared["username"] != watching_username:
+                    watching_username = prepared["username"]
+                    watch_started_at = time.monotonic()
+
+                if time.monotonic() - watch_started_at < GRACE_PERIOD_SECONDS:
                     time.sleep(1)
                     continue
 
-                item = outreach_queue.get_next_pending()
-                if not item:
-                    _write_status({"state": "empty", "pid": os.getpid()})
+                try:
+                    sent = was_message_sent(session.page, prepared["message"])
+                except PlaywrightError as exc:
+                    log.info(f"[ERROR] [OUTREACH-WORKER] Browser session appears dead ({exc}). Stopping.")
+                    _write_status({
+                        "state": "error", "pid": None,
+                        "error": f"Session navigateur perdue (probablement un manque de mémoire) : {exc}",
+                    })
+                    break
+                except Exception:
+                    sent = False
+
+                if sent:
+                    outreach_queue.update_status(prepared["username"], "done")
+                    log.info(f"[OUTREACH-WORKER] @{prepared['username']} → envoi détecté, marqué 'done'.")
+                    watching_username = None
                 else:
-                    outcome = _prepare(session, item)
-                    if outcome == "fatal":
-                        break
+                    time.sleep(2)
+                    continue
+            else:
+                watching_username = None
+
+            next_item = outreach_queue.get_next_pending()
+            if not next_item:
+                _write_status({"state": "empty", "pid": os.getpid()})
+                time.sleep(2)
+                continue
+
+            outcome = _prepare(session, next_item)
+            if outcome == "fatal":
+                break
 
             time.sleep(1)
 

@@ -174,6 +174,15 @@ def run() -> None:
                     time.sleep(1)
                     continue
 
+                # A backgrounded/unfocused Chrome window can throttle the
+                # page's own JS, delaying how quickly Instagram's React
+                # app re-renders the DOM after a real send — bringing it
+                # to the front (no click, no keypress) keeps that fast.
+                try:
+                    session.page.bring_to_front()
+                except Exception:
+                    pass
+
                 try:
                     sent = was_message_sent(session.page, prepared["message"], username=prepared["username"])
                 except PlaywrightError as exc:

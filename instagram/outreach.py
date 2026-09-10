@@ -197,6 +197,7 @@ def was_message_sent(page: Page, message: str, username: str | None = None) -> b
     if not username:
         return False
 
+    log.info(f"[OUTREACH-CHECK] @{clean_username(username)} → panel looked closed, re-opening to check...")
     composer = open_conversation(page, username, log_prefix="OUTREACH-CHECK")
     if composer is None:
         return False

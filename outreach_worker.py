@@ -187,10 +187,16 @@ def run() -> None:
                 try:
                     sent = was_message_sent(session.page, prepared["message"], username=prepared["username"])
                     check_elapsed = time.monotonic() - check_started
-                    if check_elapsed > 3:
+                    total_watched = time.monotonic() - watch_started_at
+                    if check_elapsed > 1:
                         log.info(
                             f"[OUTREACH-WORKER] Send-check for @{prepared['username']} took {check_elapsed:.1f}s "
-                            f"(likely had to re-open the conversation panel)"
+                            f"(total watching: {total_watched:.0f}s)"
+                        )
+                    elif int(total_watched) % 10 < 1:
+                        log.info(
+                            f"[OUTREACH-WORKER] Still watching @{prepared['username']} — "
+                            f"{total_watched:.0f}s elapsed, last check {check_elapsed:.2f}s, sent={sent}"
                         )
                 except PlaywrightError as exc:
                     log.info(f"[ERROR] [OUTREACH-WORKER] Browser session appears dead ({exc}). Stopping.")

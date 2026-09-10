@@ -19,6 +19,7 @@ from config import (
     MAX_POSTS_STAGE2,
     MAX_PROFILES_PER_SESSION,
     MAX_RELATED_PER_PROFILE,
+    MIN_SCORE,
     PAUSE_FLAG,
 )
 from instagram.comment_sampler import sample_comments
@@ -26,6 +27,7 @@ from instagram.discovery import search_accounts
 from instagram.post_extractor import extract_recent_posts
 from instagram.profile_extractor import extract_profile
 from intelligence.qualification import run_stage1, run_stage2
+from intelligence.schemas import RecommendedAction, Stage1Decision
 from storage import database as db
 from storage import prospect_exporter
 from utils.logging import get_logger
@@ -80,6 +82,14 @@ def run_stage2_for_prospect(page, username: str, profile: dict) -> None:
             db.save_comments(post_id, p["sample_comments"])
 
     result, data_hash = run_stage2(profile, posts)
+
+    if result.recommended_action == RecommendedAction.REJECT and result.relevance_score >= MIN_SCORE:
+        log.info(
+            f"[SCORE] @{username} → Gemini said REJECT but score {result.relevance_score} "
+            f"is >= MIN_SCORE ({MIN_SCORE}), overriding to LOW_PRIORITY"
+        )
+        result.recommended_action = RecommendedAction.LOW_PRIORITY
+
     db.save_stage2_result(username, result.model_dump(mode="json"), data_hash, ANALYSIS_VERSION)
     if result.recommended_action.value == "REJECT":
         log.info(f"[SKIP] @{username} → rejected after deep analysis")
@@ -108,6 +118,14 @@ def process_one_candidate(page, item: dict) -> str:
     db.update_profile_fields(username, {k: v for k, v in profile.items() if k in _PROFILE_FIELD_KEYS})
 
     result, data_hash = run_stage1(profile)
+
+    if result.decision == Stage1Decision.REJECT and result.preliminary_relevance_score >= MIN_SCORE:
+        log.info(
+            f"[SCORE] @{username} → Gemini said REJECT but score {result.preliminary_relevance_score} "
+            f"is >= MIN_SCORE ({MIN_SCORE}), overriding to KEEP_LIGHT"
+        )
+        result.decision = Stage1Decision.KEEP_LIGHT
+
     db.save_stage1_result(username, result.preliminary_relevance_score, result.decision.value, data_hash)
     db.mark_queue_status(username, "DONE")
 

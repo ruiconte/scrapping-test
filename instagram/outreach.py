@@ -117,7 +117,20 @@ def open_dm_with_draft(page: Page, username: str, message: str) -> bool:
     # for a human to review and send themselves.
     log.info(f"[OUTREACH] @{username} → message drafted in composer, awaiting your review to send")
     return True
+def send_initial_outreach(page: Page, username: str, message: str) -> bool:
+    """Open a prospect's DM, fill the first outreach message and send it."""
 
+    drafted = open_dm_with_draft(page, username, message)
+
+    if not drafted:
+        log.info(
+            f"[OUTREACH] @{username} → message not sent because draft creation failed"
+        )
+        return False
+
+    page.wait_for_timeout(1000)
+
+    return send_current_draft(page, username)
 
 def send_current_draft(page: Page, username: str) -> bool:
     """Send the message currently present in the Instagram DM composer.

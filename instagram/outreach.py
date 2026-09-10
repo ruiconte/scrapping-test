@@ -112,6 +112,39 @@ def open_dm_with_draft(page: Page, username: str, message: str) -> bool:
 
     composer.click()
     composer.type(message, delay=15)
-    page.keyboard.press("Enter")
+    # Do NOT press Enter here: in Instagram's DM composer, Enter submits the
+    # message immediately. The message must stay in the composer, untouched,
+    # for a human to review and send themselves.
     log.info(f"[OUTREACH] @{username} → message drafted in composer, awaiting your review to send")
     return True
+def send_initial_outreach(page: Page, username: str, message: str) -> bool:
+    """Open a prospect's DM, fill the first outreach message and send it."""
+
+    drafted = open_dm_with_draft(page, username, message)
+
+    if not drafted:
+        log.info(
+            f"[OUTREACH] @{username} → message not sent because draft creation failed"
+        )
+        return False
+
+    page.wait_for_timeout(1000)
+
+    return send_current_draft(page, username)
+
+def send_current_draft(page: Page, username: str) -> bool:
+    """Send the message currently present in the Instagram DM composer.
+
+    Returns True when the send action was performed successfully.
+    Does not attempt to bypass Instagram warnings, challenges or blocks.
+    """
+    try:
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(1500)
+
+        log.info(f"[OUTREACH] @{username} → message sent")
+        return True
+
+    except Exception as exc:
+        log.info(f"[OUTREACH] @{username} → send failed: {exc}")
+        return False
